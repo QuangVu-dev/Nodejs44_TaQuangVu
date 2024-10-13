@@ -1,12 +1,16 @@
 // B1: import lib express
 import express from "express";
 import rootRoutes from "./src/routes/root.router.js";
+import cors from "cors";
 
 // B2: tạo object express
 const app = express();
 
 // thêm middleware để đọc data json
 app.use(express.json());
+
+// thêm middleware cors để FE có thể call API tới BE
+app.use(cors());
 
 // import rootRouter
 app.use(rootRoutes);
