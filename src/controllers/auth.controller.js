@@ -1,5 +1,9 @@
+import { createToken } from "../config/jwt.js";
+import transporter from "../config/transporter.js";
 import sequelize from "../models/connect.js";
 import initModels from "../models/init-models.js";
+import bcrypt from "bcrypt";
+import jwt from "jsonwebtoken";
 
 const model = initModels(sequelize);
 
@@ -20,15 +24,102 @@ const register = async (req, res, next) => {
       const userNew = await model.users.create({
          full_name: fullName,
          email: email,
-         pass_word: pass,
+         pass_word: bcrypt.hashSync(pass, 10),
       });
-      return res.status(200).json({
-         message: `Đăng ký thành công`,
-         data: userNew,
+
+      // cấu hình info email
+      const mailOption = {
+         from: process.env.MAIL_USER,
+         to: email,
+         subject: "Welcome to Our service",
+         text: `Hello ${fullName}. Best Regards.`,
+         html: `<h1>Ahihi đồ ngốc</h1>`,
+      };
+
+      // gửi mail
+      transporter.sendMail(mailOption, (err, info) => {
+         if (err) {
+            return res.status(500).json({ message: "Sending email error" });
+         }
+         return res.status(200).json({
+            message: "Đăng ký thành công",
+            data: userNew,
+         });
       });
    } catch (error) {
       return res.status(500).json({ message: "error" });
    }
 };
 
-export { register };
+const login = async (req, res) => {
+   try {
+      // b1: lấy email và pass_word từ body request
+      // b2: check user thông qua email (get user từ db)
+      //   b2.1: nếu không có user => ra error user not found
+      //   b2.2: nếu có user => check tiếp pass_word
+      //     b2.2.1: nếu password không trùng nhau => ra error password is wrong
+      //     b2.2.2: nếu password trùng nhau => tạo access token
+      let { email, pass_word } = req.body;
+      let user = await model.users.findOne({
+         where: { email },
+      });
+      if (!user) {
+         return res.status(400).json({ message: "Email is wrong" });
+      }
+      let checkPass = bcrypt.compareSync(pass_word, user.pass_word);
+      if (!checkPass) {
+         return res.status(400).json({ message: "Password is wrong" });
+      }
+      let payload = { userId: user.user_id };
+      // tạo token
+      // funtion sign của jwt
+      // param 1: tạo payload và lưu vào token
+      // param 2: key để tạo ra token
+      // param 3: setting lifetime của token và thuật toán để tạo token
+      // let accessToken = jwt.sign({ payload }, "NODE44", {
+      //    algorithm: "HS256",
+      //    expiresIn: "1d",
+      // });
+      let accessToken = createToken({ userId: user.user_id });
+      return res.status(200).json({
+         message: "Login successfully",
+         data: accessToken,
+      });
+   } catch (error) {
+      return res.status(500).json({ message: "error" });
+   }
+};
+
+const loginFacebook = async (req, res) => {
+   try {
+      // b1: lấy id, email, name từ request
+      // b2: check id (app_face_id trong db)
+      // b2.1 nếu có app_face_id => tạo access token => gửi về cho FE
+      // b2.2 nếu không có app_face_id => tạo user mới => gửi về cho FE
+      let { id, email, name } = req.body;
+      let user = await model.users.findOne({
+         where: { face_app_id: id },
+      });
+      if (!user) {
+         let newUser = {
+            full_name: name,
+            face_app_id: id,
+            email,
+         };
+         user = await model.users.create(newUser);
+      }
+      let accessToken = jwt.sign({ userId: user.user_id }, "NODE44", {
+         algorithm: "HS256",
+         expiresIn: "1d",
+      });
+      return res.status(200).json({
+         message: "Login successfully",
+         data: accessToken,
+      });
+   } catch (error) {
+      console.log(error);
+      return res.status(500).json({ message: "error" });
+   }
+};
+
+export { register, login, loginFacebook };
