@@ -1,4 +1,4 @@
-import { createToken } from "../config/jwt.js";
+import { createRefToken, createToken } from "../config/jwt.js";
 import transporter from "../config/transporter.js";
 import sequelize from "../models/connect.js";
 import initModels from "../models/init-models.js";
@@ -81,6 +81,26 @@ const login = async (req, res) => {
       //    expiresIn: "1d",
       // });
       let accessToken = createToken({ userId: user.user_id });
+      // tạo refresh token
+      let refreshToken = createRefToken({ userId: user.user_id });
+      // lưu refresh token vào database
+      await model.users.update(
+         {
+            refresh_token: refreshToken,
+         },
+         {
+            where: { user_id: user.user_id },
+         }
+      );
+
+      // lưu refresh token vào cookie
+      res.cookie("refreshToken", refreshToken, {
+         httpOnly: true, // cookie không thể truy cập được từ javascript để bảo mật
+         secure: false, // dùng cho localhost, nếu chạy https thì phải set là true
+         sameSite: "Lax", // đảm bảo cookie được gửi trong nhiều domain khác nhau
+         maxAge: 7 * 24 * 60 * 60 * 1000, // thời gian tồn tại là 7 ngày
+      });
+
       return res.status(200).json({
          message: "Login successfully",
          data: accessToken,
@@ -122,4 +142,27 @@ const loginFacebook = async (req, res) => {
    }
 };
 
-export { register, login, loginFacebook };
+const extendToken = async (req, res) => {
+   try {
+      // lấy refresh token từ cookie của request
+      let refreshToken = req.cookies.refreshToken;
+      if (!refreshToken) {
+         return res.status(401);
+      }
+      // check refresh token trong database
+      let userRefToken = await model.users.findOne({
+         where: {
+            refresh_token: refreshToken,
+         },
+      });
+      if (!userRefToken) {
+         return res.status(401);
+      }
+      let newAccessToken = createToken({ userId: userRefToken.user_id });
+      return res.status(200).json({ message: "Success", data: newAccessToken });
+   } catch (error) {
+      return res.status(501).json({ message: "error" });
+   }
+};
+
+export { register, login, loginFacebook, extendToken };
