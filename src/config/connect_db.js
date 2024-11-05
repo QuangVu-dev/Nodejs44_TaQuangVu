@@ -8,6 +8,6 @@ export default {
    pass: process.env.DB_PASS,
    host: process.env.DB_HOST,
    database: process.env.DB_DATABASE,
-   dialect: process.env.DB_DIALECT,
+   dialect: "mysql",
    port: process.env.DB_PORT,
 };
